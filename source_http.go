@@ -26,16 +26,11 @@ func (s *HTTPImageSource) Matches(r *http.Request) bool {
 		return false
 	}
 
-	remoteURL, err := url.Parse(rURL)
-	if err != nil {
-		return false
-	}
-
-	if remoteURL.Scheme == "http" || remoteURL.Scheme == "https" {
+	if r.Method == http.MethodGet && strings.HasPrefix(rURL, "http") {
 		return true
 	}
+
 	return false
-	//return r.Method == http.MethodGet && r.URL.Query().Get(URLQueryKey) != ""
 }
 
 func (s *HTTPImageSource) GetImage(req *http.Request) ([]byte, error) {

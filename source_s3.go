@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -27,15 +28,11 @@ func (s *S3ImageSource) Matches(r *http.Request) bool {
 	if rURL == "" {
 		return false
 	}
-	remoteURL, err := url.Parse(rURL)
-	if err != nil {
-		return false
-	}
 
-	if remoteURL.Scheme == "s3" {
-		fmt.Printf("%+v\n123\n", remoteURL.Scheme)
+	if strings.HasPrefix(rURL, "s3://") {
 		return true
 	}
+
 	return false
 	//return r.Method == http.MethodGet && r.URL.Query().Get(URLQueryKey) != ""
 }
@@ -77,6 +74,7 @@ func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+
 	defer results.Body.Close()
 
 	buf := bytes.NewBuffer(nil)
@@ -84,6 +82,19 @@ func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, er
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func (s *S3ImageSource) setAuthorizationHeader(req *http.Request, ireq *http.Request) {
+	auth := s.Config.Authorization
+	if auth == "" {
+		auth = ireq.Header.Get("X-Forward-Authorization")
+	}
+	if auth == "" {
+		auth = ireq.Header.Get("Authorization")
+	}
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 }
 
 func init() {
