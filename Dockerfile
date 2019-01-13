@@ -64,6 +64,7 @@ WORKDIR $GOPATH
 # Fetch the latest version of the package
 RUN go get -u golang.org/x/net/context
 RUN go get -u github.com/golang/dep/cmd/dep
+RUN go get -u github.com/aws/aws-sdk-go/aws
 
 # Copy imaginary sources
 COPY . $GOPATH/src/github.com/h2non/imaginary
