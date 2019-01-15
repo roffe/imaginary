@@ -24,17 +24,8 @@ func NewS3ImageSource(config *SourceConfig) ImageSource {
 }
 
 func (s *S3ImageSource) Matches(r *http.Request) bool {
-	rURL := r.URL.Query().Get(URLQueryKey)
-	if rURL == "" {
-		return false
-	}
-
-	if strings.HasPrefix(rURL, "s3://") {
-		return true
-	}
-
-	return false
-	//return r.Method == http.MethodGet && r.URL.Query().Get(URLQueryKey) != ""
+	urlQuery := r.URL.Query().Get(URLQueryKey)
+	return r.Method == http.MethodGet && strings.HasPrefix(urlQuery, "s3://")
 }
 
 func (s *S3ImageSource) GetImage(req *http.Request) ([]byte, error) {
@@ -42,10 +33,13 @@ func (s *S3ImageSource) GetImage(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, ErrInvalidImageURL
 	}
+
 	if shouldRestrictOrigin(url, s.Config.AllowedOrigins) {
 		return nil, fmt.Errorf("not allowed remote URL origin: %s", url.Host)
 	}
+
 	return s.fetchImage(url, req)
+
 }
 
 func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, error) {
@@ -59,7 +53,7 @@ func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, er
 			Key:    aws.String(url.Path),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("error fetching image S3 headers: %v", err)
+			return nil, fmt.Errorf("error fetching image headers from S3: %v", err)
 		}
 
 		if int(*res.ContentLength) > s.Config.MaxAllowedSize {
@@ -82,19 +76,6 @@ func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, er
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func (s *S3ImageSource) setAuthorizationHeader(req *http.Request, ireq *http.Request) {
-	auth := s.Config.Authorization
-	if auth == "" {
-		auth = ireq.Header.Get("X-Forward-Authorization")
-	}
-	if auth == "" {
-		auth = ireq.Header.Get("Authorization")
-	}
-	if auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
 }
 
 func init() {

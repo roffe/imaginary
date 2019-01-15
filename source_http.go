@@ -21,16 +21,8 @@ func NewHTTPImageSource(config *SourceConfig) ImageSource {
 }
 
 func (s *HTTPImageSource) Matches(r *http.Request) bool {
-	rURL := r.URL.Query().Get(URLQueryKey)
-	if rURL == "" {
-		return false
-	}
-
-	if r.Method == http.MethodGet && strings.HasPrefix(rURL, "http") {
-		return true
-	}
-
-	return false
+	urlQuery := r.URL.Query().Get(URLQueryKey)
+	return r.Method == http.MethodGet && strings.HasPrefix(urlQuery, "http")
 }
 
 func (s *HTTPImageSource) GetImage(req *http.Request) ([]byte, error) {
