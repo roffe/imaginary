@@ -43,7 +43,11 @@ func (s *S3ImageSource) GetImage(req *http.Request) ([]byte, error) {
 }
 
 func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, error) {
-	sess := session.New()
+	_ = ireq
+	sess, err := session.NewSession()
+	if err != nil {
+		return nil, err
+	}
 	svc := s3.New(sess, aws.NewConfig())
 
 	// Check remote image size by fetching object size

@@ -37,7 +37,6 @@ RUN DEBIAN_FRONTEND=noninteractive \
 WORKDIR /tmp
 RUN curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "${GOPATH}/bin" v1.16.0
 
-
 WORKDIR ${GOPATH}/src/github.com/h2non/imaginary
 
 # Copy imaginary sources
