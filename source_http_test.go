@@ -124,6 +124,123 @@ func TestHttpImageSourceForwardAuthHeader(t *testing.T) {
 	}
 }
 
+func TestHttpImageSourceForwardHeaders(t *testing.T) {
+	cases := []string{
+		"X-Custom",
+		"X-Token",
+	}
+
+	for _, header := range cases {
+		r, _ := http.NewRequest(http.MethodGet, "http://foo/bar?url=http://bar.com", nil)
+		r.Header.Set(header, "foobar")
+
+		source := &HTTPImageSource{&SourceConfig{ForwardHeaders: cases}}
+		if !source.Matches(r) {
+			t.Fatal("Cannot match the request")
+		}
+
+		oreq := &http.Request{Header: make(http.Header)}
+		source.setForwardHeaders(oreq, r)
+
+		if oreq.Header.Get(header) != "foobar" {
+			t.Fatal("Missmatch custom header")
+		}
+	}
+}
+
+func TestHttpImageSourceNotForwardHeaders(t *testing.T) {
+	cases := []string{
+		"X-Custom",
+		"X-Token",
+	}
+
+	url := createURL("http://bar.com", t)
+
+	r, _ := http.NewRequest(http.MethodGet, "http://foo/bar?url="+url.String(), nil)
+	r.Header.Set("Not-Forward", "foobar")
+
+	source := &HTTPImageSource{&SourceConfig{ForwardHeaders: cases}}
+	if !source.Matches(r) {
+		t.Fatal("Cannot match the request")
+	}
+
+	oreq := newHTTPRequest(source, r, http.MethodGet, url)
+
+	if oreq.Header.Get("Not-Forward") != "" {
+		t.Fatal("Forwarded unspecified header")
+	}
+}
+
+func TestHttpImageSourceForwardedHeadersNotOverride(t *testing.T) {
+	cases := []string{
+		"Authorization",
+		"X-Custom",
+	}
+
+	url := createURL("http://bar.com", t)
+
+	r, _ := http.NewRequest(http.MethodGet, "http://foo/bar?url="+url.String(), nil)
+	r.Header.Set("Authorization", "foobar")
+
+	source := &HTTPImageSource{&SourceConfig{Authorization: "ValidAPIKey", ForwardHeaders: cases}}
+	if !source.Matches(r) {
+		t.Fatal("Cannot match the request")
+	}
+
+	oreq := newHTTPRequest(source, r, http.MethodGet, url)
+
+	if oreq.Header.Get("Authorization") != "ValidAPIKey" {
+		t.Fatal("Authorization header override")
+	}
+}
+
+func TestHttpImageSourceCaseSensitivityInForwardedHeaders(t *testing.T) {
+	cases := []string{
+		"X-Custom",
+		"X-Token",
+	}
+
+	url := createURL("http://bar.com", t)
+
+	r, _ := http.NewRequest(http.MethodGet, "http://foo/bar?url="+url.String(), nil)
+	r.Header.Set("x-custom", "foobar")
+
+	source := &HTTPImageSource{&SourceConfig{ForwardHeaders: cases}}
+	if !source.Matches(r) {
+		t.Fatal("Cannot match the request")
+	}
+
+	oreq := newHTTPRequest(source, r, http.MethodGet, url)
+
+	if oreq.Header.Get("X-Custom") == "" {
+		t.Fatal("Case sensitive not working on forwarded headers")
+	}
+}
+
+func TestHttpImageSourceEmptyForwardedHeaders(t *testing.T) {
+	cases := []string{}
+
+	url := createURL("http://bar.com", t)
+
+	r, _ := http.NewRequest(http.MethodGet, "http://foo/bar?url="+url.String(), nil)
+
+	source := &HTTPImageSource{&SourceConfig{ForwardHeaders: cases}}
+	if !source.Matches(r) {
+		t.Fatal("Cannot match the request")
+	}
+
+	if len(source.Config.ForwardHeaders) != 0 {
+		t.Log(source.Config.ForwardHeaders)
+		t.Fatal("Setted empty custom header")
+	}
+
+	oreq := newHTTPRequest(source, r, http.MethodGet, url)
+
+	if oreq == nil {
+		t.Fatal("Error creating request using empty custom headers")
+	}
+}
+
 func TestHttpImageSourceError(t *testing.T) {
 	var err error
 
@@ -181,16 +298,18 @@ func TestHttpImageSourceExceedsMaximumAllowedLength(t *testing.T) {
 }
 
 func TestShouldRestrictOrigin(t *testing.T) {
-	plainOrigins := []*url.URL{
-		createURL("https://example.org", t),
-	}
+	plainOrigins := parseOrigins(
+		"https://example.org",
+	)
 
-	wildCardOrigins := []*url.URL{
-		createURL("https://localhost", t),
-		createURL("https://*.example.org", t),
-		createURL("https://some.s3.bucket.on.aws.org", t),
-		createURL("https://*.s3.bucket.on.aws.org", t),
-	}
+	wildCardOrigins := parseOrigins(
+		"https://localhost,https://*.example.org,https://some.s3.bucket.on.aws.org,https://*.s3.bucket.on.aws.org",
+	)
+
+	withPathOrigins := parseOrigins(
+		"https://localhost/foo/bar/,https://*.example.org/foo/,https://some.s3.bucket.on.aws.org/my/bucket/," +
+			"https://*.s3.bucket.on.aws.org/my/bucket/,https://no-leading-path-slash.example.org/assets",
+	)
 
 	t.Run("Plain origin", func(t *testing.T) {
 		testURL := createURL("https://example.org/logo.jpg", t)
@@ -217,7 +336,7 @@ func TestShouldRestrictOrigin(t *testing.T) {
 	})
 
 	t.Run("Wildcard origin, sub-sub domain URL", func(t *testing.T) {
-		testURL := createURL("https://n.s3.bucket.on.aws.org/logo.jpg", t)
+		testURL := createURL("https://n.s3.bucket.on.aws.org/our/bucket/logo.jpg", t)
 
 		if shouldRestrictOrigin(testURL, wildCardOrigins) {
 			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, wildCardOrigins)
@@ -233,6 +352,84 @@ func TestShouldRestrictOrigin(t *testing.T) {
 
 		if !shouldRestrictOrigin(testURL, wildCardOrigins) {
 			t.Errorf("Expected '%s' to not be allowed with wildcard origins: %+v", testURL, wildCardOrigins)
+		}
+	})
+
+	t.Run("Loopback origin with path, correct URL", func(t *testing.T) {
+		testURL := createURL("https://localhost/foo/bar/logo.png", t)
+
+		if shouldRestrictOrigin(testURL, withPathOrigins) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+
+	t.Run("Wildcard origin with path, correct URL", func(t *testing.T) {
+		testURL := createURL("https://our.company.s3.bucket.on.aws.org/my/bucket/logo.gif", t)
+
+		if shouldRestrictOrigin(testURL, withPathOrigins) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+
+	t.Run("Wildcard origin with partial path, correct URL", func(t *testing.T) {
+		testURL := createURL("https://our.company.s3.bucket.on.aws.org/my/bucket/a/b/c/d/e/logo.gif", t)
+
+		if shouldRestrictOrigin(testURL, withPathOrigins) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+
+	t.Run("Wildcard origin with partial path, correct URL double slashes", func(t *testing.T) {
+		testURL := createURL("https://static.example.org/foo//a//b//c/d/e/logo.webp", t)
+
+		if shouldRestrictOrigin(testURL, withPathOrigins) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+
+	t.Run("Wildcard origin with path missing trailing slash, correct URL", func(t *testing.T) {
+		testURL := createURL("https://no-leading-path-slash.example.org/assets/logo.webp", t)
+
+		if shouldRestrictOrigin(testURL, parseOrigins("https://*.example.org/assets")) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+
+	t.Run("Loopback origin with path, incorrect URL", func(t *testing.T) {
+		testURL := createURL("https://localhost/wrong/logo.png", t)
+
+		if !shouldRestrictOrigin(testURL, withPathOrigins) {
+			t.Errorf("Expected '%s' to be allowed with origins: %+v", testURL, withPathOrigins)
+		}
+	})
+}
+
+func TestParseOrigins(t *testing.T) {
+	t.Run("Appending a trailing slash on paths", func(t *testing.T) {
+		origins := parseOrigins("http://foo.example.org/assets")
+		if origins[0].Path != "/assets/" {
+			t.Errorf("Expected the path to have a trailing /, instead it was: %q", origins[0].Path)
+		}
+	})
+
+	t.Run("Paths should not receive multiple trailing slashes", func(t *testing.T) {
+		origins := parseOrigins("http://foo.example.org/assets/")
+		if origins[0].Path != "/assets/" {
+			t.Errorf("Expected the path to have a single trailing /, instead it was: %q", origins[0].Path)
+		}
+	})
+
+	t.Run("Empty paths are fine", func(t *testing.T) {
+		origins := parseOrigins("http://foo.example.org")
+		if origins[0].Path != "" {
+			t.Errorf("Expected the path to remain empty, instead it was: %q", origins[0].Path)
+		}
+	})
+
+	t.Run("Root paths are fine", func(t *testing.T) {
+		origins := parseOrigins("http://foo.example.org/")
+		if origins[0].Path != "/" {
+			t.Errorf("Expected the path to remain a slash, instead it was: %q", origins[0].Path)
 		}
 	})
 }

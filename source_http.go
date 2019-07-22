@@ -31,7 +31,7 @@ func (s *HTTPImageSource) GetImage(req *http.Request) ([]byte, error) {
 		return nil, ErrInvalidImageURL
 	}
 	if shouldRestrictOrigin(url, s.Config.AllowedOrigins) {
-		return nil, fmt.Errorf("not allowed remote URL origin: %s", url.Host)
+		return nil, fmt.Errorf("not allowed remote URL origin: %s%s", url.Host, url.Path)
 	}
 	return s.fetchImage(url, req)
 }
@@ -87,6 +87,15 @@ func (s *HTTPImageSource) setAuthorizationHeader(req *http.Request, ireq *http.R
 	}
 }
 
+func (s *HTTPImageSource) setForwardHeaders(req *http.Request, ireq *http.Request) {
+	headers := s.Config.ForwardHeaders
+	for _, header := range headers {
+		if _, ok := ireq.Header[header]; ok {
+			req.Header.Set(header, ireq.Header.Get(header))
+		}
+	}
+}
+
 func parseURL(request *http.Request) (*url.URL, error) {
 	return url.Parse(request.URL.Query().Get(URLQueryKey))
 }
@@ -95,6 +104,10 @@ func newHTTPRequest(s *HTTPImageSource, ireq *http.Request, method string, url *
 	req, _ := http.NewRequest(method, url.String(), nil)
 	req.Header.Set("User-Agent", "imaginary/"+Version)
 	req.URL = url
+
+	if len(s.Config.ForwardHeaders) != 0 {
+		s.setForwardHeaders(req, ireq)
+	}
 
 	// Forward auth header to the target server, if necessary
 	if s.Config.AuthForwarding || s.Config.Authorization != "" {
@@ -111,19 +124,19 @@ func shouldRestrictOrigin(url *url.URL, origins []*url.URL) bool {
 
 	for _, origin := range origins {
 		if origin.Host == url.Host {
-			return false
+			return !strings.HasPrefix(url.Path, origin.Path)
 		}
 
 		if origin.Host[0:2] == "*." {
 
 			// Testing if "*.example.org" matches "example.org"
 			if url.Host == origin.Host[2:] {
-				return false
+				return !strings.HasPrefix(url.Path, origin.Path)
 			}
 
 			// Testing if "*.example.org" matches "foo.example.org"
 			if strings.HasSuffix(url.Host, origin.Host[1:]) {
-				return false
+				return !strings.HasPrefix(url.Path, origin.Path)
 			}
 		}
 	}

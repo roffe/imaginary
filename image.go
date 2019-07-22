@@ -93,8 +93,8 @@ func Resize(buf []byte, o ImageOptions) (Image, error) {
 	opts := BimgOptions(o)
 	opts.Embed = true
 
-	if !o.NoCrop {
-		opts.Crop = true
+	if o.IsDefinedField.NoCrop {
+		opts.Crop = !o.NoCrop
 	}
 
 	return Process(buf, opts)
@@ -171,9 +171,8 @@ func Enlarge(buf []byte, o ImageOptions) (Image, error) {
 	opts := BimgOptions(o)
 	opts.Enlarge = true
 
-	if !o.NoCrop {
-		opts.Crop = true
-	}
+	// Since both width & height is required, we allow cropping by default.
+	opts.Crop = !o.NoCrop
 
 	return Process(buf, opts)
 }
@@ -259,8 +258,8 @@ func Zoom(buf []byte, o ImageOptions) (Image, error) {
 		opts.AreaWidth = o.AreaWidth
 		opts.AreaHeight = o.AreaHeight
 
-		if o.NoCrop == false {
-			opts.Crop = true
+		if o.IsDefinedField.NoCrop {
+			opts.Crop = !o.NoCrop
 		}
 	}
 
@@ -295,7 +294,7 @@ func Watermark(buf []byte, o ImageOptions) (Image, error) {
 	opts.Watermark.NoReplicate = o.NoReplicate
 
 	if len(o.Color) > 2 {
-		opts.Watermark.Background = bimg.Color{o.Color[0], o.Color[1], o.Color[2]}
+		opts.Watermark.Background = bimg.Color{R: o.Color[0], G: o.Color[1], B: o.Color[2]}
 	}
 
 	return Process(buf, opts)
