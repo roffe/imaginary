@@ -56,9 +56,6 @@ RUN GO111MODULE=off go build -a \
     -ldflags="-s -w -h -X main.Version=${IMAGINARY_VERSION}" \
     github.com/h2non/imaginary
 
-
-
-
 FROM debian:stretch-slim
 
 ARG IMAGINARY_VERSION
