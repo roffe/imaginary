@@ -17,10 +17,13 @@ const ImageSourceTypeS3 ImageSourceType = "s3"
 
 type S3ImageSource struct {
 	Config *SourceConfig
+	svc    *s3.S3
 }
 
 func NewS3ImageSource(config *SourceConfig) ImageSource {
-	return &S3ImageSource{config}
+	sess := session.Must(session.NewSession())
+	svc := s3.New(sess, aws.NewConfig())
+	return &S3ImageSource{Config: config, svc: svc}
 }
 
 func (s *S3ImageSource) Matches(r *http.Request) bool {
@@ -44,15 +47,10 @@ func (s *S3ImageSource) GetImage(req *http.Request) ([]byte, error) {
 
 func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, error) {
 	_ = ireq
-	sess, err := session.NewSession()
-	if err != nil {
-		return nil, err
-	}
-	svc := s3.New(sess, aws.NewConfig())
 
 	// Check remote image size by fetching object size
 	if s.Config.MaxAllowedSize > 0 {
-		res, err := svc.HeadObject(&s3.HeadObjectInput{
+		res, err := s.svc.HeadObject(&s3.HeadObjectInput{
 			Bucket: aws.String(url.Host),
 			Key:    aws.String(url.Path),
 		})
@@ -65,7 +63,7 @@ func (s *S3ImageSource) fetchImage(url *url.URL, ireq *http.Request) ([]byte, er
 		}
 	}
 
-	results, err := svc.GetObject(&s3.GetObjectInput{
+	results, err := s.svc.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(url.Host),
 		Key:    aws.String(url.Path),
 	})
